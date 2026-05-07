@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: telemetry
+      POSTGRES_USER: telemetry
+      POSTGRES_PASSWORD: telemetry
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U telemetry -d telemetry"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: telemetry
+      RABBITMQ_DEFAULT_PASS: telemetry
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  api:
+    build: ./api
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgres://telemetry:telemetry@postgres:5432/telemetry
+      RABBITMQ_URL: amqp://telemetry:telemetry@rabbitmq:5672
+      PORT: "3001"
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: on-failure
+
+  worker:
+    build: ./worker
+    environment:
+      DATABASE_URL: postgres://telemetry:telemetry@postgres:5432/telemetry
+      RABBITMQ_URL: amqp://telemetry:telemetry@rabbitmq:5672
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: on-failure
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
