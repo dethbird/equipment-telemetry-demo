@@ -15,13 +15,13 @@ async function get<T>(path: string): Promise<T> {
 }
 
 export function fetchAssets(): Promise<Asset[]> {
-  return get<Asset[]>(`/assets?tenantId=${TENANT_ID}`);
+  return get<Asset[]>(`/api/assets?tenantId=${TENANT_ID}`);
 }
 
 export function fetchAssetDetail(id: string): Promise<AssetDetail> {
-  return get<AssetDetail>(`/assets/${id}?tenantId=${TENANT_ID}`);
+  return get<AssetDetail>(`/api/assets/${id}?tenantId=${TENANT_ID}`);
 }
 
 export function fetchWorkOrders(): Promise<WorkOrderRow[]> {
-  return get<WorkOrderRow[]>(`/work-orders?tenantId=${TENANT_ID}`);
+  return get<WorkOrderRow[]>(`/api/work-orders?tenantId=${TENANT_ID}`);
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchAssets } from '../api/client';
-import type { Asset } from '../types';
+import { fetchAssets, fetchWorkOrders } from '../api/client';
+import type { Asset, WorkOrderRow } from '../types';
 
 const card: React.CSSProperties = {
   background: '#fff',
@@ -25,14 +25,33 @@ const badge: React.CSSProperties = {
   textTransform: 'capitalize',
 };
 
+const woBadge: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '2px 8px',
+  borderRadius: '999px',
+  background: '#fee2e2',
+  color: '#b91c1c',
+  fontSize: '0.75rem',
+  fontWeight: 600,
+  marginRight: '0.5rem',
+};
+
 export default function AssetList() {
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [woCounts, setWoCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAssets()
-      .then(setAssets)
+    Promise.all([fetchAssets(), fetchWorkOrders()])
+      .then(([a, wo]: [Asset[], WorkOrderRow[]]) => {
+        setAssets(a);
+        const counts: Record<string, number> = {};
+        wo.filter((w) => w.status === 'open').forEach((w) => {
+          counts[w.asset_id] = (counts[w.asset_id] ?? 0) + 1;
+        });
+        setWoCounts(counts);
+      })
       .catch((err: unknown) => setError(String(err)))
       .finally(() => setLoading(false));
   }, []);
@@ -64,7 +83,12 @@ export default function AssetList() {
               )}
             </div>
           </div>
-          <span style={badge}>{asset.type}</span>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            {woCounts[asset.id] ? (
+              <span style={woBadge}>{woCounts[asset.id]} open WO</span>
+            ) : null}
+            <span style={badge}>{asset.type}</span>
+          </div>
         </div>
       ))}
     </>

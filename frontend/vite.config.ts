@@ -5,13 +5,15 @@ import react from '@vitejs/plugin-react';
 // In Docker, nginx handles the proxy instead (see nginx.conf).
 export default defineConfig({
   plugins: [react()],
+  build: {
+    assetsDir: '_assets',
+  },
   server: {
     proxy: {
-      '/assets': 'http://localhost:3001',
-      '/telemetry': 'http://localhost:3001',
-      '/work-orders': 'http://localhost:3001',
-      '/maintenance-rules': 'http://localhost:3001',
-      '/health': 'http://localhost:3001',
+      '/api': {
+        target: 'http://localhost:3001',
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
     },
   },
 });
