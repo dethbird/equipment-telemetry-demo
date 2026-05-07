@@ -1,5 +1,14 @@
 # equipment-telemetry-demo
 
+![hapi.js](https://img.shields.io/badge/hapi.js-v21-orange?style=flat-square&logo=javascript)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.4-3178c6?style=flat-square&logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react&logoColor=black)
+![Postgres](https://img.shields.io/badge/Postgres-16-336791?style=flat-square&logo=postgresql&logoColor=white)
+![RabbitMQ](https://img.shields.io/badge/RabbitMQ-3.13-ff6600?style=flat-square&logo=rabbitmq&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ed?style=flat-square&logo=docker&logoColor=white)
+![Knex](https://img.shields.io/badge/Knex.js-migrations-e16426?style=flat-square)
+![Vitest](https://img.shields.io/badge/Vitest-tested-6e9f18?style=flat-square&logo=vitest&logoColor=white)
+
 A multi-tenant IoT equipment tracking platform. Devices send telemetry to a hapi.js API, readings are persisted in Postgres, events are published to RabbitMQ, and a worker evaluates maintenance rules and opens work orders asynchronously.
 
 ```
@@ -35,33 +44,147 @@ React Dashboard  (asset list → detail → telemetry + work orders)
 
 ## Running locally
 
-### Prerequisites
+There are three ways to run the project:
 
-- Docker + Docker Compose
+1. [Docker Compose](#1-docker-compose-recommended) — everything in containers, one command
+2. [Local dev servers](#2-local-dev-servers) — run api/worker/frontend separately against local Postgres + RabbitMQ
+3. [Tests only](#3-tests-only) — no infrastructure needed
 
-### Start everything
+---
+
+### 1. Docker Compose (recommended)
+
+**Prerequisites:** Docker + Docker Compose
 
 ```bash
+# Clone and enter the repo
+git clone <repo-url> equipment-telemetry-demo
+cd equipment-telemetry-demo
+
+# Build and start all 5 services
 docker compose up --build
 ```
 
-Services:
+On first boot the containers start in dependency order:
+- `postgres` and `rabbitmq` start first and run health checks
+- `api` and `worker` wait until both are healthy before starting
+- `frontend` (nginx) starts after `api`
 
-| Service | URL |
-|---|---|
-| React dashboard | http://localhost:3000 |
-| hapi API | http://localhost:3001 |
-| RabbitMQ management | http://localhost:15672 (user: `telemetry` / pass: `telemetry`) |
+**Seed demo data** (first run only — run while containers are up):
 
-### Run migrations + seed demo data
+```bash
+docker compose exec api sh -c "cd /app && node -e \"
+  const knex = require('knex')({ client: 'pg', connection: process.env.DATABASE_URL });
+  knex.migrate.latest().then(() => { console.log('migrated'); process.exit(0); });
+\""
+```
 
-The first time (or after `migrate:rollback`), seed the demo tenant, assets, devices, and maintenance rules:
+Or run migrations + seed from the host against the exposed Postgres port:
 
 ```bash
 cd db
 npm install
 DATABASE_URL=postgres://telemetry:telemetry@localhost:5432/telemetry npm run migrate
 DATABASE_URL=postgres://telemetry:telemetry@localhost:5432/telemetry npm run seed
+```
+
+**Services once running:**
+
+| Service | URL | Notes |
+|---|---|---|
+| React dashboard | http://localhost:3000 | nginx proxies API requests to `api:3001` |
+| hapi API | http://localhost:3001 | direct access |
+| RabbitMQ management UI | http://localhost:15672 | user: `telemetry` / pass: `telemetry` |
+| Postgres | `localhost:5432` | user: `telemetry` / pass: `telemetry` / db: `telemetry` |
+
+**Stop everything:**
+
+```bash
+docker compose down          # stop containers, keep volumes
+docker compose down -v       # stop containers and delete Postgres data
+```
+
+---
+
+### 2. Local dev servers
+
+**Prerequisites:** Node.js 20+, a local Postgres instance, a local RabbitMQ instance (or use Docker for just the infrastructure).
+
+**Start only the infrastructure:**
+
+```bash
+docker compose up postgres rabbitmq
+```
+
+**Copy and configure env:**
+
+```bash
+cp .env.example .env
+# Edit .env if your local Postgres/RabbitMQ credentials differ
+```
+
+**Install dependencies and run migrations + seed:**
+
+```bash
+cd db && npm install
+DATABASE_URL=postgres://telemetry:telemetry@localhost:5432/telemetry npm run migrate
+DATABASE_URL=postgres://telemetry:telemetry@localhost:5432/telemetry npm run seed
+cd ..
+```
+
+**Start the API (hot-reload):**
+
+```bash
+cd api
+npm install
+cp ../.env.example .env   # or set env vars manually
+npm run dev
+# Listening at http://localhost:3001
+```
+
+**Start the worker (hot-reload, separate terminal):**
+
+```bash
+cd worker
+npm install
+npm run dev
+# Waiting for messages on queue: telemetry.received
+```
+
+**Start the frontend dev server (separate terminal):**
+
+```bash
+cd frontend
+npm install
+npm run dev
+# http://localhost:5173  (Vite proxies /assets /telemetry etc. → localhost:3001)
+```
+
+---
+
+### 3. Tests only
+
+No Docker, Postgres, or RabbitMQ required — all external dependencies are mocked.
+
+```bash
+cd api
+npm install
+npm test
+```
+
+Expected output:
+
+```
+✓ POST /telemetry > returns 201 and the inserted reading for a valid payload
+✓ POST /telemetry > returns 404 when device does not exist for the given tenant
+✓ POST /telemetry > returns 400 when a required field is missing (tenantId)
+✓ POST /telemetry > returns 400 when hours is negative
+✓ POST /telemetry > returns 400 when timestamp is not an ISO date
+✓ POST /telemetry > returns 400 when engineTemp is not a number
+✓ GET /health > returns 200 with status ok
+
+Test Files  1 passed (1)
+Tests       7 passed (7)
 ```
 
 ---
@@ -120,12 +243,11 @@ curl "http://localhost:3001/work-orders?tenantId=a0000000-0000-0000-0000-0000000
 ## Tests
 
 ```bash
-cd api
-npm install
-npm test
+cd api && npm install && npm test          # run once
+cd api && npx vitest                       # watch mode
 ```
 
-Tests use Vitest + hapi's `server.inject()` (no real HTTP). The database and RabbitMQ are mocked — no infrastructure needed to run tests.
+Tests use Vitest + hapi's `server.inject()` — no real HTTP server is bound, no ports are opened. The Knex db plugin and the amqplib event bus are replaced with `vi.mock()` stubs so no infrastructure is needed.
 
 ---
 
